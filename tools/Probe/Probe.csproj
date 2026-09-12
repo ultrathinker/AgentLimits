@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>AgentLimitsProbe</AssemblyName>
+    <RootNamespace>AgentLimits</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The exact same collectors as the app — this checks the real working code. -->
+    <Compile Include="..\..\Model.cs" />
+    <Compile Include="..\..\Config.cs" />
+    <Compile Include="..\..\Native.cs" />
+    <Compile Include="..\..\AgyStatusline.cs" />
+    <Compile Include="..\..\Collectors\*.cs" />
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+
+</Project>

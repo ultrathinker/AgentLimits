@@ -1,0 +1,5 @@
+{
+  "id": "openrouter",
+  "interval_sec": 180,
+  "env": {}
+}

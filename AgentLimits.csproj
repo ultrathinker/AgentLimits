@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>AgentLimits</AssemblyName>
+    <RootNamespace>AgentLimits</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ApplicationIcon>Assets\tray.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WinForms is only needed for the tray icon; its implicit using breaks WPF's Application/Window. -->
+    <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Assets\tray.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <Resource Include="Assets\tray.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- tools/ — helper utilities with their own projects, not part of the app build. -->
+    <Compile Remove="tools\**" />
+    <None Include="tools\**" />
+  </ItemGroup>
+
+</Project>

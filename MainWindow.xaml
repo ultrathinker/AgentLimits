@@ -1,0 +1,353 @@
+<Window x:Class="AgentLimits.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Agent Limits"
+        Width="410"
+        MinWidth="380"
+        MinHeight="120"
+        SizeToContent="Manual"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="CanResizeWithGrip">
+
+    <Window.Resources>
+        <!-- Thin scrollbar matching the app's style: 6px, no buttons, a rounded thumb
+             in TextDim with some opacity. The track is transparent. -->
+        <Style x:Key="ScrollBarThumb" TargetType="Thumb">
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border x:Name="ThumbBorder"
+                                Background="#408A8A96"
+                                CornerRadius="3"/>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ThumbBorder" Property="Background" Value="#B08A8A96"/>
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter TargetName="ThumbBorder" Property="Background" Value="#FFE8E8EC"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ThinScrollBar" TargetType="ScrollBar">
+            <Setter Property="Width" Value="6"/>
+            <Setter Property="MinWidth" Value="6"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid x:Name="GridRoot" Width="6" Background="{TemplateBinding Background}">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource ScrollBarThumb}"/>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageDownCommand" Focusable="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageUpCommand" Focusable="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Width" Value="Auto"/>
+                    <Setter Property="Height" Value="6"/>
+                    <Setter Property="MinHeight" Value="6"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Flat bar, no border: track + fill, the fill color comes from a trigger on Tone. -->
+        <Style x:Key="ThinBar" TargetType="ProgressBar">
+            <Setter Property="Height" Value="8"/>
+            <Setter Property="Minimum" Value="0"/>
+            <Setter Property="Maximum" Value="100"/>
+            <Setter Property="Background" Value="{StaticResource TrackBg}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="4" SnapsToDevicePixels="True">
+                            <Grid>
+                                <Rectangle x:Name="PART_Track"/>
+                                <Border x:Name="PART_Indicator"
+                                        HorizontalAlignment="Left"
+                                        Background="{TemplateBinding Foreground}"
+                                        CornerRadius="4"/>
+                            </Grid>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <DataTemplate x:Key="RowTemplate">
+            <Grid Margin="10,2,12,2" ToolTip="{Binding Tooltip}" Opacity="{Binding RowOpacity}">
+                <!-- Windows the plan doesn't have at all are hidden: otherwise they look broken.
+                     We hide the Grid itself, not the container — under grouping the container is a GroupItem. -->
+                <Grid.Style>
+                    <Style TargetType="Grid">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Hidden}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Grid.Style>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="112"/>
+                    <ColumnDefinition Width="*" MinWidth="60"/>
+                    <ColumnDefinition Width="63"/>
+                    <ColumnDefinition Width="69"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="15.5"
+                           Foreground="{StaticResource TextMain}" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"/>
+
+                <ProgressBar Grid.Column="1" Margin="3,0,9,0"
+                             VerticalAlignment="Center"
+                             Value="{Binding DisplayPercent, Mode=OneWay, FallbackValue=0, TargetNullValue=0}">
+                    <ProgressBar.Style>
+                        <Style TargetType="ProgressBar" BasedOn="{StaticResource ThinBar}">
+                            <Setter Property="Foreground" Value="{StaticResource ToneDead}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Tone}" Value="ok">
+                                    <Setter Property="Foreground" Value="{StaticResource ToneOk}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Tone}" Value="warn">
+                                    <Setter Property="Foreground" Value="{StaticResource ToneWarn}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Tone}" Value="crit">
+                                    <Setter Property="Foreground" Value="{StaticResource ToneCrit}"/>
+                                </DataTrigger>
+
+                                <!-- Only green gets softened: yellow and red are signals,
+                                     they must look the same in every window.
+                                     This trigger comes last so it wins over the base tone. -->
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding Tone}" Value="ok"/>
+                                        <Condition Binding="{Binding IsShortWindow}" Value="True"/>
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Foreground" Value="{StaticResource ToneOkSoft}"/>
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ProgressBar.Style>
+                </ProgressBar>
+
+                <TextBlock Grid.Column="2" Text="{Binding RemainingText}" FontSize="15.5"
+                           HorizontalAlignment="Right" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextMain}"/>
+
+                <TextBlock Grid.Column="3" Text="{Binding ResetText}" FontSize="14"
+                           HorizontalAlignment="Right" VerticalAlignment="Center"
+                           Margin="6,0,0,0" Foreground="{StaticResource TextDim}"/>
+            </Grid>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid>
+    <Border Background="{StaticResource PanelBg}"
+            BorderBrush="{StaticResource PanelBorder}"
+            BorderThickness="1"
+            CornerRadius="12"
+            Padding="14,11,14,12"
+            AllowDrop="True"
+            PreviewDragOver="Panel_PreviewDragOver"
+            Drop="Panel_Drop"
+            MouseLeftButtonDown="Panel_MouseLeftButtonDown"
+            MouseMove="Panel_MouseMove"
+            MouseLeftButtonUp="Panel_MouseLeftButtonUp">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="16" ShadowDepth="3" Opacity="0.5" Color="Black"/>
+        </Border.Effect>
+
+        <Grid x:Name="ContentRoot">
+            <Grid.Effect>
+                <BlurEffect x:Name="ContentBlur" Radius="0"/>
+            </Grid.Effect>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" Margin="0,0,0,7" Background="Transparent">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                    <Image Source="pack://application:,,,/Assets/tray.ico"
+                           Width="16" Height="16"
+                           Margin="0,0,6,0"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <TextBlock Text="Agent Limits" FontSize="14" Foreground="{StaticResource TextDim}"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <TextBlock x:Name="UpdatedText" FontSize="13" Foreground="{StaticResource TextDim}"
+                               VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <TextBlock x:Name="ModeButton" Text="&#x21c4;" FontSize="16"
+                               Foreground="{StaticResource TextDim}" Cursor="Hand"
+                               VerticalAlignment="Center" Margin="0,0,10,0"
+                               MouseLeftButtonDown="Mode_Click"/>
+                    <TextBlock x:Name="RefreshButton" Text="&#x21bb;" FontSize="18"
+                               Foreground="{StaticResource TextDim}" Cursor="Hand"
+                               VerticalAlignment="Center" Margin="0,0,10,0"
+                               ToolTip="Refresh now"
+                               MouseLeftButtonDown="Refresh_Click"/>
+                    <TextBlock x:Name="HelpButton" Text="?" FontSize="16"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextDim}" Cursor="Hand"
+                               VerticalAlignment="Center" Margin="0,0,10,0"
+                               ToolTip="About this app"
+                               MouseLeftButtonDown="Help_Click"/>
+                    <TextBlock x:Name="CloseButton" Text="&#x2715;" FontSize="16"
+                               Foreground="{StaticResource TextDim}" Cursor="Hand"
+                               VerticalAlignment="Center"
+                               ToolTip="Hide to tray"
+                               MouseLeftButtonDown="Close_Click"/>
+                </StackPanel>
+            </Grid>
+
+            <ScrollViewer Grid.Row="1"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Padding="0,0,8,0"
+                          VerticalAlignment="Stretch"
+                          HorizontalAlignment="Stretch">
+                <ScrollViewer.Resources>
+                    <!-- Override the default ScrollBar with our thin style. -->
+                    <Style TargetType="ScrollBar" BasedOn="{StaticResource ThinScrollBar}"/>
+                </ScrollViewer.Resources>
+                <ItemsControl x:Name="RowsList"
+                              ItemTemplate="{StaticResource RowTemplate}">
+                    <ItemsControl.GroupStyle>
+                        <GroupStyle>
+                            <GroupStyle.ContainerStyle>
+                                <Style TargetType="GroupItem">
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="GroupItem">
+                                                <StackPanel Margin="0,0,0,4">
+                                                    <!-- Block header: the Border catches the mouse and starts a drag.
+                                                         Cursor=Hand signals the header is draggable. The header's
+                                                         color depends on whether the cursor is hovering it
+                                                         (DataTrigger below). Drop is accepted at the ItemsControl
+                                                         level, so any point on the panel is a drop zone. -->
+                                                    <Border x:Name="GroupHeader"
+                                                            Background="Transparent"
+                                                            Cursor="Hand"
+                                                            Margin="10,6,12,3"
+                                                            MouseLeftButtonDown="GroupHeader_MouseLeftButtonDown">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0"
+                                                                       Text="{Binding Name}"
+                                                                       FontSize="13"
+                                                                       FontWeight="SemiBold"
+                                                                       Margin="0,0,8,0">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Foreground" Value="{StaticResource TextDim}"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}, FallbackValue=False}" Value="True">
+                                                                                <Setter Property="Foreground" Value="#FF7AA2FF"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                            <Border Grid.Column="1" Height="1"
+                                                                    VerticalAlignment="Center"
+                                                                    Background="{StaticResource PanelBorder}"/>
+                                                            <TextBlock Grid.Column="2"
+                                                                       Text="{Binding Items[0].PeakScheduleText}"
+                                                                       ToolTip="{Binding Items[0].PeakTooltip}"
+                                                                       FontSize="11"
+                                                                       FontWeight="Normal"
+                                                                       VerticalAlignment="Center"
+                                                                       Margin="8,0,0,0">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Foreground" Value="{StaticResource TextDim}"/>
+                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding Items[0].PeakScheduleText}" Value="{x:Null}">
+                                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding Items[0].PeakScheduleText}" Value="">
+                                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding Items[0].IsPeakActive}" Value="True">
+                                                                                <Setter Property="Foreground" Value="{StaticResource ToneCrit}"/>
+                                                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                        </Grid>
+                                                    </Border>
+
+                                                    <ItemsPresenter/>
+                                                </StackPanel>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </GroupStyle.ContainerStyle>
+                        </GroupStyle>
+                    </ItemsControl.GroupStyle>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+    </Border>
+
+    <!-- Loading overlay: shown while refreshing, doesn't intercept clicks. -->
+    <Border x:Name="LoadingOverlay"
+            Visibility="Collapsed"
+            Opacity="0"
+            IsHitTestVisible="False"
+            CornerRadius="12"
+            Background="#33000000">
+        <Grid Width="38" Height="38" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Ellipse Stroke="{StaticResource TrackBg}" StrokeThickness="3"/>
+            <Ellipse Stroke="{StaticResource ToneOk}" StrokeThickness="3"
+                     StrokeDashArray="6 100" StrokeDashCap="Round"
+                     RenderTransformOrigin="0.5,0.5">
+                <Ellipse.RenderTransform>
+                    <RotateTransform x:Name="SpinnerRotate"/>
+                </Ellipse.RenderTransform>
+            </Ellipse>
+        </Grid>
+    </Border>
+    </Grid>
+</Window>

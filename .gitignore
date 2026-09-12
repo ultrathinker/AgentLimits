@@ -1,0 +1,28 @@
+# Build
+bin/
+obj/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+
+# Local artifacts
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# AI agent context (never commit)
+CLAUDE.md
+AGENTS.md
+QWEN.md
+GEMINI.md
+Cloud.md
+.cursorrules
+REVIEW*.md
+PLUGIN_SYSTEM.md
+_publication_report.md

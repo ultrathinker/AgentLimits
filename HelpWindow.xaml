@@ -1,0 +1,86 @@
+<Window x:Class="AgentLimits.HelpWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="About — Agent Limits"
+        Width="640" Height="560"
+        MinWidth="360" MinHeight="240"
+        WindowStartupLocation="Manual"
+        ResizeMode="CanResize"
+        WindowStyle="SingleBorderWindow"
+        ShowInTaskbar="True"
+        Background="#16161B">
+
+    <Border Background="{StaticResource PanelBg}"
+            BorderBrush="{StaticResource PanelBorder}"
+            BorderThickness="1"
+            CornerRadius="12"
+            Margin="10">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="16" ShadowDepth="3" Opacity="0.5" Color="Black"/>
+        </Border.Effect>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TabControl Grid.Row="0" x:Name="MainTabs"
+                        Background="Transparent"
+                        BorderThickness="0">
+                <TabItem Header="About">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  Padding="14,12,14,12">
+                        <TextBox x:Name="AboutText"
+                                 IsReadOnly="True"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 Foreground="{StaticResource TextMain}"
+                                 FontSize="15"
+                                 Padding="0,0,0,0"
+                                 TextWrapping="Wrap"
+                                 Cursor="IBeam"
+                                 AcceptsReturn="True"
+                                 IsUndoEnabled="False"
+                                 IsTabStop="False"/>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="Plugin Authoring Guide">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <ScrollViewer Grid.Row="0"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      Padding="14,12,14,6">
+                            <TextBox x:Name="GuideText"
+                                     IsReadOnly="True"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     Foreground="{StaticResource TextMain}"
+                                     FontSize="14"
+                                     FontFamily="Consolas"
+                                     Padding="0,0,0,0"
+                                     TextWrapping="Wrap"
+                                     Cursor="IBeam"
+                                     AcceptsReturn="True"
+                                     IsUndoEnabled="False"
+                                     IsTabStop="False"/>
+                        </ScrollViewer>
+                        <StackPanel Grid.Row="1" Orientation="Horizontal"
+                                    HorizontalAlignment="Right" Margin="14,0,14,12">
+                            <Button x:Name="CopyGuideButton"
+                                    Content="Copy to clipboard"
+                                    Click="CopyGuide_Click"
+                                    Padding="10,5,10,5"/>
+                        </StackPanel>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+        </Grid>
+    </Border>
+</Window>

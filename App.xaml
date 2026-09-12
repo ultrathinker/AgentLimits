@@ -1,0 +1,22 @@
+<Application x:Class="AgentLimits.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <SolidColorBrush x:Key="PanelBg" Color="#E61B1B20"/>
+        <SolidColorBrush x:Key="PanelBorder" Color="#33FFFFFF"/>
+        <SolidColorBrush x:Key="TextMain" Color="#FFE8E8EC"/>
+        <SolidColorBrush x:Key="TextDim" Color="#FF8A8A96"/>
+        <SolidColorBrush x:Key="TrackBg" Color="#33FFFFFF"/>
+        <SolidColorBrush x:Key="ToneOk" Color="#FF4ADE80"/>
+        <SolidColorBrush x:Key="ToneWarn" Color="#FFFACC15"/>
+        <SolidColorBrush x:Key="ToneCrit" Color="#FFF87171"/>
+        <SolidColorBrush x:Key="ToneDead" Color="#FF5A5A66"/>
+
+        <!-- Green for 5-hour windows: same hue, noticeably less saturated.
+             A different color, not opacity: on a dark background, opacity
+             pushes the bar toward shadow, making it darker rather than softer.
+             Yellow and red are never softened — they're signals, always the same. -->
+        <SolidColorBrush x:Key="ToneOkSoft" Color="#FF83AE96"/>
+    </Application.Resources>
+</Application>
