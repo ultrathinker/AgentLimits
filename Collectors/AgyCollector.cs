@@ -49,19 +49,10 @@ public sealed class AgyCollector
 
     private static readonly Result Empty = new([], null);
 
-    /// <summary>CSRF became mandatory in recent agy versions (verified manually with curl
-    /// on a live port: both https and http return 401 "missing/invalid CSRF token" on a
-    /// WORKING RPC endpoint — the server does respond, it just refuses authorization).
-    /// AgentLimits has no legitimate way to obtain this token (no discovery file found,
-    /// `agy models` returns only a model list with no quota) — this is an external
-    /// breaking change in the CLI, not a bug in the host. We stop at the first 401
-    /// without trying the remaining schemes/ports — otherwise, for an already-found
-    /// HTTPS port, we'd still try http next and reliably spam agy's own console with
-    /// "client sent an HTTP request to an HTTPS server".</summary>
-    private const string CsrfBlockedError = "agy requires CSRF auth (breaking change in a recent agy update) — not supported yet";
-
-    /// <summary>What to say when there's no statusline snapshot yet and the RPC is closed by CSRF.</summary>
-    private const string NoSourceError = "no snapshot yet — open agy in a terminal once (RPC is closed by CSRF)";
+    /// <summary>What to say when there's no statusline snapshot yet and the RPC is closed by CSRF (401 on
+    /// a working endpoint; the token can't be obtained externally). We stop at the first 401 without
+    /// trying other schemes and ports — otherwise we spam agy's own console.</summary>
+    private const string NoSourceError = "no snapshot yet — open agy in a terminal once (RPC is closed by CSRF), or double-click to open one";
 
     public async Task<Result> CollectAsync(CancellationToken ct = default)
     {
@@ -69,18 +60,10 @@ public sealed class AgyCollector
         //    private RPC is closed by CSRF. Written by AgyStatusline (our own exe,
         //    configured in agy's settings.json as statusLine.command).
         var snapshot = ReadStatuslineCache();
-        if (IsFresh(snapshot)) return snapshot!;
-
-        // 0b. No snapshot yet, or it's stale — trigger one ourselves: running `agy models`
-        //     makes agy render its statusline (verified: the file shows up after ~0.4s)
-        //     without spending any quota. This is what keeps Antigravity's data alive
-        //     without the user having to open a TUI, not just while one is open.
-        if (await TryRefreshViaAgyAsync(ct))
-        {
-            var refreshed = ReadStatuslineCache();
-            if (refreshed is not null) return refreshed;
-        }
-        if (snapshot is not null) return snapshot;   // refresh didn't produce a new one — return what we had
+        // No hidden `agy models` here: it does render the statusline, but without
+        // a quota object (verified), so it can't refresh the snapshot and
+        // only held the poll for up to 12 s. Only a real chat in agy brings the quota.
+        if (snapshot is not null) return snapshot;
 
         // 1. An already-running agy (the user's interactive session) — a free source.
         foreach (var proc in SafeProcesses("agy"))
@@ -138,49 +121,38 @@ public sealed class AgyCollector
     private static bool IsFresh(Result? r) => r is { Error: null, Buckets.Count: > 0 };
 
     /// <summary>
-    /// Force agy to render its statusline: spawn a hidden `agy models` and wait for
-    /// our own bridge to overwrite the snapshot file. Returns true if the file was
-    /// updated. The process lives ~1.5s and exits on its own, but we kill it anyway
-    /// just in case.
+    /// Open a real, visible terminal window with an interactive agy session — on a
+    /// double-click on an Antigravity row. Unlike Codex (which has a clean
+    /// one-shot exec mode), agy has no safe headless way to reliably render
+    /// the statusline: `-p` never triggers it, and `-i` keeps the session
+    /// open. So we simply hand control to the user in a real terminal,
+    /// with no hidden PTY automation.
     /// </summary>
-    private async Task<bool> TryRefreshViaAgyAsync(CancellationToken ct)
+    public static void OpenInteractiveTerminal()
     {
-        if (ExePath is null || !File.Exists(ExePath)) return false;
-
-        var path = AgyStatusline.CachePath;
-        var before = File.Exists(path) ? File.GetLastWriteTimeUtc(path) : DateTime.MinValue;
-
-        Process? spawned = null;
+        var exe = FindExe();
+        if (exe is null)
+        {
+            // Otherwise cmd /k would sit on screen with "'agy' is not recognized".
+            Log.Warn("agy: not opening a terminal, agy.exe not found");
+            return;
+        }
+        // cmd.exe /k takes the rest of the command line as is and, if it starts
+        // and ends with a quote, strips exactly one quote from each
+        // end (assuming it's an "extra" outer layer) — with our own two
+        // pairs of quotes (exe path and prompt) that breaks the command. We wrap
+        // everything in an extra outer pair so that this layer is what gets stripped.
+        var inner = $"\"{exe}\" -i \"just say 'hi', that's all\"";
         try
         {
-            spawned = Process.Start(new ProcessStartInfo(ExePath, "models")
+            Process.Start(new ProcessStartInfo("cmd.exe", $"/k \"{inner}\"")
             {
-                CreateNoWindow = true,
                 UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                WorkingDirectory = Path.GetTempPath()
+                WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             });
-            if (spawned is null) return false;
-
-            var deadline = DateTime.UtcNow.AddSeconds(12);
-            while (DateTime.UtcNow < deadline && !ct.IsCancellationRequested)
-            {
-                await Task.Delay(200, ct);
-                if (File.Exists(path) && File.GetLastWriteTimeUtc(path) > before)
-                {
-                    // agy's statusline fires several times in a row (initializing → idle),
-                    // and the first render can have the quota not filled in yet. Give it a beat.
-                    await Task.Delay(600, ct);
-                    return true;
-                }
-                if (spawned.HasExited) break;
-            }
-            return File.Exists(path) && File.GetLastWriteTimeUtc(path) > before;
+            Log.Info($"agy: opened interactive terminal (exe={exe})");
         }
-        catch (OperationCanceledException) { throw; }
-        catch { return false; }
-        finally { TryKill(spawned); }
+        catch (Exception ex) { Log.Warn($"agy: could not open terminal ({ex.Message})"); }
     }
 
     /// <summary>
@@ -208,7 +180,7 @@ public sealed class AgyCollector
         {
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("quota", out var quota) || quota.ValueKind != JsonValueKind.Object)
-                return Empty with { Error = "statusline payload has no quota (update agy?)" };
+                return Empty with { Error = "agy hasn't reported quota yet — chat in agy once (agy models / idle renders don't carry it), or double-click to open one" };
 
             var buckets = new List<Bucket>();
             foreach (var entry in quota.EnumerateObject())
@@ -243,7 +215,7 @@ public sealed class AgyCollector
             // itself. If the snapshot is old, we still show the numbers, but dimmed and with a reason.
             var age = DateTime.Now - sampledAt;
             var stale = age > AgyStatusline.FreshFor
-                ? $"statusline snapshot is {Age(age)} old — open agy to refresh"
+                ? $"statusline snapshot is {Age(age)} old — open agy to refresh, or double-click to open one"
                 : null;
             return new Result(buckets, stale);
         }
@@ -324,7 +296,7 @@ public sealed class AgyCollector
                     if (!b.TryGetProperty("remainingFraction", out var rf)) continue;
 
                     var id = idEl.GetString();
-                    if (string.IsNullOrEmpty(id)) continue;
+                    if (string.IsNullOrEmpty(id) || buckets.Any(x => x.Id == id)) continue;
 
                     DateTime? reset = b.TryGetProperty("resetTime", out var rt) && rt.GetString() is string s &&
                                       DateTime.TryParse(s, null, System.Globalization.DateTimeStyles.AdjustToUniversal, out var dt)

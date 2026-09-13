@@ -15,6 +15,7 @@
     <Compile Include="..\..\Model.cs" />
     <Compile Include="..\..\Config.cs" />
     <Compile Include="..\..\Native.cs" />
+    <Compile Include="..\..\Log.cs" />
     <Compile Include="..\..\AgyStatusline.cs" />
     <Compile Include="..\..\Collectors\*.cs" />
     <Compile Include="Program.cs" />

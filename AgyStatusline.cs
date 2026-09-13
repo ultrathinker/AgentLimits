@@ -57,16 +57,17 @@ internal static class AgyStatusline
         {
             if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
 
-            // agy fires the statusline several times in a row (initializing → idle),
-            // and the first render can have the quota not filled in yet — every
-            // window at zero. Such a render must never overwrite live numbers —
-            // better to keep showing the previous ones.
-            if (AllZero(doc.RootElement) && File.Exists(CachePath))
+            // agy fires the statusline several times in a row, and not every render carries
+            // the quota: on "initializing" the quota object is there but every window is zero; on
+            // "authenticating" (session re-auth) there is no quota object at all. Both
+            // mean "quota unavailable right now", and neither may be confused with "quota = 0":
+            // such a render must never overwrite live numbers — better to keep showing the previous ones.
+            if (!HasUsableQuota(doc.RootElement) && File.Exists(CachePath))
             {
                 try
                 {
                     using var old = JsonDocument.Parse(File.ReadAllText(CachePath));
-                    if (!AllZero(old.RootElement)) return;
+                    if (HasUsableQuota(old.RootElement)) return;
                 }
                 catch { /* previous snapshot doesn't parse — nothing to lose */ }
             }
@@ -78,22 +79,24 @@ internal static class AgyStatusline
         File.Move(tmp, CachePath, overwrite: true);
     }
 
-    /// <summary>Every quota window is zero — a sign the quota hasn't been filled in yet.</summary>
-    private static bool AllZero(JsonElement root)
+    /// <summary>
+    /// At least one quota window is non-zero. false both when there is no quota object
+    /// at all (agy hasn't loaded it yet or is re-authenticating) and when it is there
+    /// but every remaining_fraction is zero (the first, "initializing" render).
+    /// </summary>
+    private static bool HasUsableQuota(JsonElement root)
     {
         if (!root.TryGetProperty("quota", out var quota) || quota.ValueKind != JsonValueKind.Object)
             return false;
 
-        var any = false;
         foreach (var b in quota.EnumerateObject())
         {
             if (b.Value.ValueKind != JsonValueKind.Object) continue;
             if (!b.Value.TryGetProperty("remaining_fraction", out var f) || f.ValueKind != JsonValueKind.Number)
                 continue;
-            any = true;
-            if (f.GetDouble() > 0) return false;
+            if (f.GetDouble() > 0) return true;
         }
-        return any;
+        return false;
     }
 
     /// <summary>Run the user's command, feeding it the same stdin, and return its stdout.</summary>
@@ -119,6 +122,9 @@ internal static class AgyStatusline
             p.StandardInput.Close();
 
             var stdout = p.StandardOutput.ReadToEndAsync();
+            // Drain stderr too: otherwise a chatty user command fills the pipe buffer,
+            // hangs, and gets killed by the timeout.
+            _ = p.StandardError.ReadToEndAsync();
             // agy's own statusline budget is ~5-10s; we budget for less so we don't
             // get killed ourselves as a hung script.
             if (!p.WaitForExit(4000)) { try { p.Kill(entireProcessTree: true); } catch { } return null; }

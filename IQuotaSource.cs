@@ -25,6 +25,10 @@ public interface IQuotaSource
     /// <summary>Whether the plugin has passed one-click approve. Always true for builtin.</summary>
     bool Approved { get; }
 
-    /// <summary>One poll. Should return a QuotaSnapshot, or null on error.</summary>
-    Task<QuotaSnapshot?> RefreshAsync(CancellationToken ct);
+    /// <summary>One poll. Should return a QuotaSnapshot, or null on error.
+    /// manual=true means a manual refresh (the user's click/double-click), not the background
+    /// timer. Sources that need a real, costly request to recover their data
+    /// (Codex) make it only when manual=true — background polling always stays
+    /// free.</summary>
+    Task<QuotaSnapshot?> RefreshAsync(CancellationToken ct, bool manual = false);
 }

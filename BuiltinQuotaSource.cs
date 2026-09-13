@@ -13,7 +13,7 @@ namespace AgentLimits;
 /// </summary>
 internal sealed class BuiltinQuotaSource : IQuotaSource
 {
-    private readonly Func<AppConfig, CancellationToken, Task<QuotaSnapshot?>> _refresh;
+    private readonly Func<AppConfig, CancellationToken, bool, Task<QuotaSnapshot?>> _refresh;
 
     public string Id { get; }
     public string DisplayName { get; }
@@ -24,7 +24,7 @@ internal sealed class BuiltinQuotaSource : IQuotaSource
 
     private BuiltinQuotaSource(
         string id, string displayName, TimeSpan interval,
-        Func<AppConfig, CancellationToken, Task<QuotaSnapshot?>> refresh)
+        Func<AppConfig, CancellationToken, bool, Task<QuotaSnapshot?>> refresh)
     {
         Id = id;
         DisplayName = displayName;
@@ -32,12 +32,12 @@ internal sealed class BuiltinQuotaSource : IQuotaSource
         _refresh = refresh;
     }
 
-    public async Task<QuotaSnapshot?> RefreshAsync(CancellationToken ct)
+    public async Task<QuotaSnapshot?> RefreshAsync(CancellationToken ct, bool manual = false)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            var snap = await _refresh(AppConfig.Load(), ct);
+            var snap = await _refresh(AppConfig.Load(), ct, manual);
             var status = snap?.SourceError is null ? "ok" : $"error {snap.SourceError}";
             Log.Info($"{Id}: {status}, {snap?.Blocks.Count ?? 0} blocks in {sw.Elapsed.TotalMilliseconds:0} ms");
             return snap;
@@ -55,7 +55,7 @@ internal sealed class BuiltinQuotaSource : IQuotaSource
 
         yield return MakeAggregate("claude", "Claude Code",
             TimeSpan.FromSeconds(Math.Max(120, cfg.ClaudeIntervalSec)),
-            async (_, ct) =>
+            async (_, ct, _) =>
             {
                 var personal = await claude.CollectAsync("personal", ct);
                 var work = await claude.CollectAsync("work", ct);
@@ -78,7 +78,7 @@ internal sealed class BuiltinQuotaSource : IQuotaSource
         var zai = new ZaiCollector();
         return new BuiltinQuotaSource("zai", "z.ai / GLM",
             TimeSpan.FromSeconds(Math.Max(60, cfg.ZaiIntervalSec)),
-            async (c, ct) =>
+            async (c, ct, _) =>
             {
                 var r = await zai.CollectAsync(c, ct);
                 var blocks = new List<BlockData>();
@@ -94,9 +94,9 @@ internal sealed class BuiltinQuotaSource : IQuotaSource
         var codex = new CodexCollector();
         return new BuiltinQuotaSource("codex", "Codex CLI",
             TimeSpan.FromSeconds(Math.Max(10, cfg.CodexIntervalSec)),
-            async (_, ct) =>
+            async (_, ct, manual) =>
             {
-                var r = await codex.CollectAsync(ct);
+                var r = await codex.CollectAsync(ct, manual);
                 var blocks = new List<BlockData>();
                 Append(blocks, "5h", "Codex", r.FiveHour, r.Error);
                 Append(blocks, "7d", "Codex", r.Weekly, r.Error);
@@ -121,9 +121,11 @@ internal sealed class BuiltinQuotaSource : IQuotaSource
         var agy = new AgyCollector();
         return new BuiltinQuotaSource("agy", "Antigravity",
             TimeSpan.FromSeconds(Math.Max(30, cfg.AgyIntervalSec)),
-            async (_, ct) =>
+            async (_, ct, manual) =>
             {
                 var r = await agy.CollectAsync(ct);
+                if (manual && !string.IsNullOrEmpty(r.Error))
+                    AgyCollector.OpenInteractiveTerminal();
                 var byId = r.Buckets.ToDictionary(b => b.Id);
                 var blocks = new List<BlockData>();
 
@@ -171,7 +173,7 @@ internal sealed class BuiltinQuotaSource : IQuotaSource
         var mm = new MinimaxCollector();
         return new BuiltinQuotaSource("minimax", "MiniMax",
             TimeSpan.FromSeconds(Math.Max(60, cfg.MinimaxIntervalSec)),
-            async (c, ct) =>
+            async (c, ct, _) =>
             {
                 var r = await mm.CollectAsync(c, ct);
                 var blocks = new List<BlockData>();
@@ -194,7 +196,9 @@ internal sealed class BuiltinQuotaSource : IQuotaSource
                 Key: key,
                 Group: group,
                 Prefix: "",
-                Suffix: null,
+                // Suffix = key ("5h"/"7d"): without it Label is empty and the tooltip on this
+                // row reads as ": <error>" — no way to tell which window it belongs to.
+                Suffix: key,
                 RemainingPercent: null,
                 ResetsAt: null,
                 SampledAt: null,
@@ -217,6 +221,6 @@ internal sealed class BuiltinQuotaSource : IQuotaSource
     /// <summary>Aggregator for Claude: one source covering both profiles, since historically
     /// this was one poll in the code. We keep it simple: one IQuotaSource = one group of rows.</summary>
     private static BuiltinQuotaSource MakeAggregate(string id, string name, TimeSpan interval,
-        Func<AppConfig, CancellationToken, Task<QuotaSnapshot?>> refresh)
+        Func<AppConfig, CancellationToken, bool, Task<QuotaSnapshot?>> refresh)
         => new(id, name, interval, refresh);
 }

@@ -107,7 +107,7 @@
         </Style>
 
         <DataTemplate x:Key="RowTemplate">
-            <Grid Margin="10,2,12,2" ToolTip="{Binding Tooltip}" Opacity="{Binding RowOpacity}">
+            <Grid Margin="10,2,12,2" Background="Transparent" ToolTip="{Binding Tooltip}" Opacity="{Binding RowOpacity}">
                 <!-- Windows the plan doesn't have at all are hidden: otherwise they look broken.
                      We hide the Grid itself, not the container — under grouping the container is a GroupItem. -->
                 <Grid.Style>
@@ -122,7 +122,9 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="112"/>
                     <ColumnDefinition Width="*" MinWidth="60"/>
-                    <ColumnDefinition Width="63"/>
+                    <!-- Shared width across all rows: "100% [reset]" doesn't fit in 63 px,
+                         and the columns of different rows must stay aligned. -->
+                    <ColumnDefinition Width="Auto" MinWidth="63" SharedSizeGroup="Pct"/>
                     <ColumnDefinition Width="69"/>
                 </Grid.ColumnDefinitions>
 
@@ -162,6 +164,44 @@
                     </ProgressBar.Style>
                 </ProgressBar>
 
+                <!-- Spinner for a per-row refresh (double-click on this row), drawn over the bar;
+                     visible only while IsRefreshing=true; each row instance gets its own animation,
+                     with no named elements referenced from code-behind. -->
+                <Ellipse Grid.Column="1" Width="13" Height="13"
+                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                         Stroke="{StaticResource TextMain}" StrokeThickness="2"
+                         StrokeDashArray="2 100" StrokeDashCap="Round"
+                         RenderTransformOrigin="0.5,0.5">
+                    <Ellipse.RenderTransform>
+                        <RotateTransform Angle="0"/>
+                    </Ellipse.RenderTransform>
+                    <!-- Visibility only via a style setter: an attribute set directly in the template
+                         outranks the style trigger, and the spinner would never show. -->
+                    <Ellipse.Style>
+                        <Style TargetType="Ellipse">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsRefreshing}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <DataTrigger.EnterActions>
+                                        <BeginStoryboard x:Name="RowSpinBegin">
+                                            <Storyboard>
+                                                <DoubleAnimation
+                                                    Storyboard.TargetProperty="RenderTransform.Angle"
+                                                    From="0" To="360" Duration="0:0:0.9"
+                                                    RepeatBehavior="Forever"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </DataTrigger.EnterActions>
+                                    <DataTrigger.ExitActions>
+                                        <StopStoryboard BeginStoryboardName="RowSpinBegin"/>
+                                    </DataTrigger.ExitActions>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Ellipse.Style>
+                </Ellipse>
+
                 <TextBlock Grid.Column="2" Text="{Binding RemainingText}" FontSize="15.5"
                            HorizontalAlignment="Right" VerticalAlignment="Center"
                            Foreground="{StaticResource TextMain}"/>
@@ -182,6 +222,7 @@
             AllowDrop="True"
             PreviewDragOver="Panel_PreviewDragOver"
             Drop="Panel_Drop"
+            PreviewMouseLeftButtonDown="Panel_PreviewMouseLeftButtonDown"
             MouseLeftButtonDown="Panel_MouseLeftButtonDown"
             MouseMove="Panel_MouseMove"
             MouseLeftButtonUp="Panel_MouseLeftButtonUp">
@@ -244,6 +285,7 @@
                     <Style TargetType="ScrollBar" BasedOn="{StaticResource ThinScrollBar}"/>
                 </ScrollViewer.Resources>
                 <ItemsControl x:Name="RowsList"
+                              Grid.IsSharedSizeScope="True"
                               ItemTemplate="{StaticResource RowTemplate}">
                     <ItemsControl.GroupStyle>
                         <GroupStyle>

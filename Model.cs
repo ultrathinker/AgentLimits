@@ -36,6 +36,15 @@ public sealed class LimitRow : INotifyPropertyChanged
         set { if (_pendingApproval == value) return; _pendingApproval = value; Raise(nameof(PendingApproval)); Raise(nameof(Tooltip)); }
     }
     private bool _pendingApproval;
+
+    /// <summary>A manual refresh of this very row is running (it was double-clicked) — the UI
+    /// spins a small spinner over the bar instead of blurring the whole window.</summary>
+    public bool IsRefreshing
+    {
+        get => _isRefreshing;
+        set { if (_isRefreshing == value) return; _isRefreshing = value; Raise(nameof(IsRefreshing)); }
+    }
+    private bool _isRefreshing;
     private double? _remainingPercent;
     private DateTime? _resetsAt;
     private string? _error;
@@ -125,6 +134,10 @@ public sealed class LimitRow : INotifyPropertyChanged
     public double? DisplayPercent =>
         RemainingPercent is null ? null : (ShowUsed ? 100 - RemainingPercent.Value : RemainingPercent.Value);
 
+    /// <summary>The window should already have reset (ResetsAt is in the past), but no fresh data
+    /// has arrived yet — the source is silent; it doesn't mean the limit really is still the old one.</summary>
+    public bool ResetOverdue => ResetsAt is not null && ResetsAt.Value <= DateTime.Now;
+
     public string RemainingText
     {
         get
@@ -133,12 +146,16 @@ public sealed class LimitRow : INotifyPropertyChanged
             if (DisplayPercent is null) return "…";
 
             var v = DisplayPercent.Value;
-            if (v >= 99.5) return "100%";
+            // An overdue reset isn't a time in itself but a flag: "this is an old number,
+            // the source hasn't confirmed the new window yet". It's marked in brackets next to
+            // the percent, not in the time column, where the word was mistaken for a clock reading.
+            var flag = ResetOverdue ? " [reset]" : "";
+            if (v >= 99.5) return "100%" + flag;
             // Fractional percents are shown only below 1% — that's where they matter.
             // Very tiny amounts aren't rounded down to zero: "0%" would read as "all gone".
             if (v > 0 && v < 1)
-                return v < 0.05 ? "<0.1%" : v.ToString("0.#", CultureInfo.InvariantCulture) + "%";
-            return Math.Round(v).ToString("0", CultureInfo.InvariantCulture) + "%";
+                return (v < 0.05 ? "<0.1%" : v.ToString("0.#", CultureInfo.InvariantCulture) + "%") + flag;
+            return Math.Round(v).ToString("0", CultureInfo.InvariantCulture) + "%" + flag;
         }
     }
 
@@ -148,7 +165,8 @@ public sealed class LimitRow : INotifyPropertyChanged
         {
             if (ResetsAt is null) return "";
             var left = ResetsAt.Value - DateTime.Now;
-            if (left <= TimeSpan.Zero) return "reset";
+            // "Reset" doesn't go here — this is the time column, not a status; see RemainingText.
+            if (left <= TimeSpan.Zero) return "";
             if (left.TotalDays >= 1) return $"{(int)left.TotalDays}d {left.Hours}h";
             if (left.TotalHours >= 1) return $"{(int)left.TotalHours}h {left.Minutes:00}m";
             return $"{(int)left.TotalMinutes}m";
@@ -227,6 +245,7 @@ public sealed class LimitRow : INotifyPropertyChanged
     public void RefreshCountdown()
     {
         Raise(nameof(ResetText));
+        Raise(nameof(RemainingText));
         Raise(nameof(IsPeakActive));
         Raise(nameof(PeakTooltip));
     }

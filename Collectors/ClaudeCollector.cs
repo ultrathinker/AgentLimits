@@ -18,15 +18,18 @@ namespace AgentLimits.Collectors;
 /// The token, by contrast, is unambiguously tied to its profile.
 ///
 /// The endpoint returns 429 easily under frequent polling, so the interval is
-/// large, and the last successful response is kept in memory and shown until
-/// it's replaced.
+/// large, and the last successful response is kept (in memory and in claude-last.json) and shown until it's replaced.
 /// </summary>
 public sealed class ClaudeCollector
 {
     private const string UsageUrl = "https://api.anthropic.com/api/oauth/usage";
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
 
-    private readonly Dictionary<string, Result> _lastGood = [];
+    /// <summary>Last successful response per profile, both in memory and on disk: otherwise after
+    /// an app restart (offline, or on 429) the Claude rows stay empty until the first response.</summary>
+    private readonly Dictionary<string, Result> _lastGood = LoadLastGood();
+
+    private static string LastGoodPath => Path.Combine(AppConfig.Dir, "claude-last.json");
 
     public sealed record Result(LimitWindow? FiveHour, LimitWindow? SevenDay, string? Plan, string? Error);
 
@@ -66,7 +69,7 @@ public sealed class ClaudeCollector
                 null);
 
             if (result.FiveHour is not null || result.SevenDay is not null)
-                _lastGood[profile] = result;
+                RememberLastGood(profile, result);
             return result;
         }
         catch (Exception ex)
@@ -81,6 +84,35 @@ public sealed class ClaudeCollector
         _lastGood.TryGetValue(profile, out var last)
             ? last with { Error = error }
             : new Result(null, null, null, error);
+
+    private static Dictionary<string, Result> LoadLastGood()
+    {
+        try
+        {
+            if (File.Exists(LastGoodPath))
+            {
+                var restored = JsonSerializer.Deserialize<Dictionary<string, Result>>(File.ReadAllText(LastGoodPath)) ?? [];
+                Log.Info("claude: restored last numbers from disk — " + string.Join(", ",
+                    restored.Select(kv => $"{kv.Key} 5h={kv.Value.FiveHour?.RemainingPercent:0}% 7d={kv.Value.SevenDay?.RemainingPercent:0}%")));
+                return restored;
+            }
+        }
+        catch { /* broken cache — start empty, it gets rewritten on the first success */ }
+        return [];
+    }
+
+    private void RememberLastGood(string profile, Result result)
+    {
+        _lastGood[profile] = result;
+        try
+        {
+            Directory.CreateDirectory(AppConfig.Dir);
+            var tmp = LastGoodPath + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(_lastGood));
+            File.Move(tmp, LastGoodPath, overwrite: true);
+        }
+        catch { /* the cache is a convenience, not data: a failed write must not break the poll */ }
+    }
 
     private static (string? Token, string? Plan) ReadCredentials(string profile)
     {

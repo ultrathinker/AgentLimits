@@ -43,7 +43,7 @@ internal sealed class ExternalQuotaSource : IQuotaSource
         Interval = TimeSpan.FromSeconds(sec);
     }
 
-    public async Task<QuotaSnapshot?> RefreshAsync(CancellationToken ct)
+    public async Task<QuotaSnapshot?> RefreshAsync(CancellationToken ct, bool manual = false)
     {
         if (!Approved)
         {
@@ -277,10 +277,18 @@ internal sealed class ExternalQuotaSource : IQuotaSource
 
     /// <summary>Find a working python: first the one from config, then fall back through a list.
     /// On Windows, miniconda/Anaconda install python.exe but not the py-launcher.</summary>
+    private static string? _interpreter;
+    private static string? _interpreterFor;
+
     private static string? ResolveInterpreter()
     {
-        var candidates = new List<string>();
         var cfg = AppConfig.Load();
+        var configured = cfg.PythonPath ?? "";
+        // The answer doesn't change between polls — without a cache every poll of every plugin
+        // spawned up to four `--version` processes. Re-check only when PythonPath changes.
+        if (_interpreter is not null && _interpreterFor == configured) return _interpreter;
+
+        var candidates = new List<string>();
         if (!string.IsNullOrWhiteSpace(cfg.PythonPath)) candidates.Add(cfg.PythonPath);
         candidates.AddRange(new[] { "py", "python", "python3", "python.exe" });
 
@@ -298,7 +306,11 @@ internal sealed class ExternalQuotaSource : IQuotaSource
                     RedirectStandardError = true
                 });
                 if (p is null) continue;
-                if (p.WaitForExit(2000) && p.ExitCode == 0) return c;
+                if (p.WaitForExit(2000) && p.ExitCode == 0)
+                {
+                    _interpreterFor = configured;
+                    return _interpreter = c;
+                }
             }
             catch { /* not found, keep trying */ }
         }

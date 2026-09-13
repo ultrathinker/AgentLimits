@@ -362,6 +362,20 @@ public partial class MainWindow : Window
         return false;
     }
 
+    /// <summary>A double-click on a source's row refreshes only that source, with a local
+    /// spinner. Caught in the tunneling phase: the rows sit in a ScrollViewer, which itself
+    /// marks MouseLeftButtonDown as handled (it takes focus), so a click on a row never
+    /// bubbles up to Panel_MouseLeftButtonDown.</summary>
+    private void Panel_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ButtonState != MouseButtonState.Pressed || e.ClickCount < 2) return;
+        var row = FindRowUnderClick(e.OriginalSource as DependencyObject);
+        if (row is null) return;
+        _pressedAt = null;
+        e.Handled = true;
+        _ = RefreshSourceWithFeedbackAsync(row);
+    }
+
     private void Panel_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ButtonState != MouseButtonState.Pressed) return;
@@ -375,6 +389,81 @@ public partial class MainWindow : Window
         }
 
         _pressedAt = e.GetPosition(this);
+    }
+
+    /// <summary>Instant feedback on a double-click: the source's rows blink twice,
+    /// before a slow source (agy, a Codex ping) has had a chance to do anything.</summary>
+    private void FlashRows(IReadOnlyCollection<LimitRow> rows)
+    {
+        foreach (var grid in FindRowRoots(RowsList, rows))
+        {
+            var brush = new SolidColorBrush(System.Windows.Media.Colors.Transparent);
+            grid.Background = brush;
+            brush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation
+            {
+                To = System.Windows.Media.Color.FromArgb(0x80, 0x7A, 0xA2, 0xFF),
+                Duration = TimeSpan.FromMilliseconds(100),
+                AutoReverse = true,
+                RepeatBehavior = new RepeatBehavior(2),
+            });
+        }
+    }
+
+    private static IEnumerable<Grid> FindRowRoots(DependencyObject parent, IReadOnlyCollection<LimitRow> rows)
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            // Top-down walk: the first Grid with a row as DataContext is the template root;
+            // the parent isn't checked, since under grouping the container may not be a ContentPresenter.
+            if (child is Grid { DataContext: LimitRow row } g && rows.Contains(row))
+            {
+                yield return g;
+                continue;
+            }
+            foreach (var found in FindRowRoots(child, rows)) yield return found;
+        }
+    }
+
+    private static LimitRow? FindRowUnderClick(DependencyObject? d)
+    {
+        while (d is not null)
+        {
+            if (d is FrameworkElement { DataContext: LimitRow row }) return row;
+            d = VisualTreeHelper.GetParent(d);
+        }
+        return null;
+    }
+
+    /// <summary>Refresh only the source of the clicked row: a local
+    /// spinner on its group, no blur over the whole window. For Codex this is exactly the path
+    /// that allows a real ping (RefreshOneAsync manual: true).</summary>
+    private async Task RefreshSourceWithFeedbackAsync(LimitRow clicked)
+    {
+        if (_refreshing) return;
+
+        var sourceId = clicked.Key.Split('/', 2)[0];
+        var source = _plugins.Sources.FirstOrDefault(s => s.Id == sourceId);
+        if (source is null) { _ = RefreshWithFeedbackAsync(); return; }
+
+        _refreshing = true;
+        Log.Info($"manual refresh requested (source: {sourceId})");
+        var siblings = _rows.Where(r => r.Key.StartsWith(sourceId + "/", StringComparison.Ordinal)).ToList();
+        FlashRows(siblings);
+        foreach (var r in siblings) r.IsRefreshing = true;
+
+        var started = DateTime.UtcNow;
+        try
+        {
+            await _plugins.RefreshOneAsync(source, manual: true);
+        }
+        finally
+        {
+            var left = MinLoadingTime - (DateTime.UtcNow - started);
+            if (left > TimeSpan.Zero) await Task.Delay(left);
+            foreach (var r in siblings) r.IsRefreshing = false;
+            _refreshing = false;
+        }
     }
 
     private void Panel_MouseMove(object sender, MouseEventArgs e)

@@ -101,10 +101,14 @@ public sealed class PluginHost
         _started = false;
     }
 
-    /// <summary>Run one poll of a source.</summary>
-    public async Task RefreshOneAsync(IQuotaSource src)
+    /// <summary>Run one poll of a source. manual=true means a manual refresh (the user's
+    /// click): it lets some sources make a costly real request
+    /// instead of only reading a local cache (see IQuotaSource.RefreshAsync).</summary>
+    public async Task RefreshOneAsync(IQuotaSource src, bool manual = false)
     {
-        if (!await src.Gate.WaitAsync(0))
+        // A background tick over a running poll is simply skipped. A manual one waits: otherwise
+        // a double-click during a background poll would silently do nothing.
+        if (!await src.Gate.WaitAsync(manual ? ManualGateWait : TimeSpan.Zero))
         {
             Log.Info($"{src.Id}: skipped, previous refresh still running");
             return;
@@ -112,7 +116,7 @@ public sealed class PluginHost
         try
         {
             using var cts = new CancellationTokenSource();
-            var snap = await src.RefreshAsync(cts.Token);
+            var snap = await src.RefreshAsync(cts.Token, manual);
             if (snap is null) return;
 
             // Apply on the UI thread
@@ -127,9 +131,12 @@ public sealed class PluginHost
         }
     }
 
-    /// <summary>Run every source in parallel. Used for manual refresh.</summary>
+    private static readonly TimeSpan ManualGateWait = TimeSpan.FromSeconds(60);
+
+    /// <summary>Run every source in parallel (the ↻ button, showing from the tray). Always without
+    /// manual: paid source actions happen only on a double-click on their row.</summary>
     public async Task RefreshAllAsync()
     {
-        await Task.WhenAll(_sources.Select(RefreshOneAsync));
+        await Task.WhenAll(_sources.Select(s => RefreshOneAsync(s)));
     }
 }

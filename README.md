@@ -17,7 +17,8 @@ AgentLimits collects all of that into one small rectangle in the corner of the s
 in the tray, opens with a click on the icon, and stays on top until you dismiss it.
 
 Polling never costs you quota — none of the sources are billed for being asked about their own
-limits.
+limits. The only exception is something you trigger yourself: double-clicking a Codex row that has
+no usable data sends Codex one tiny real request (a one-word reply) so it reports fresh limits.
 
 ## Features
 
@@ -30,7 +31,12 @@ plugins folder — no compilation, no framework. See [Writing a plugin](#writing
 
 **Never shows a false zero.** If a source fails to respond, its row keeps the last known value and
 marks it stale instead of going blank. An empty row would read as "quota exhausted," which is the
-opposite of the truth.
+opposite of the truth. Claude's last numbers also survive an app restart.
+
+**Double-click a row to refresh just that source.** Its rows blink and a small spinner runs until
+the refresh is done. When Codex has nothing usable to report, the double-click pings it (see
+above). Antigravity only reports quota from a live chat session, so a double-click on a stale
+Antigravity row opens a terminal with `agy` for you.
 
 **Weekly quota stands out.** Weekly windows are drawn in full color, 5-hour windows are dimmed —
 the weekly number is the one that actually constrains your day. Yellow and red warnings are never
