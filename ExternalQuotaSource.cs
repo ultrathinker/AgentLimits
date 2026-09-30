@@ -78,7 +78,7 @@ internal sealed class ExternalQuotaSource : IQuotaSource
         var sw = Stopwatch.StartNew();
         try
         {
-            return await RunAsync(scriptPath, ct);
+            return await RunAsync(scriptPath, ct, manual);
         }
         finally
         {
@@ -109,7 +109,7 @@ internal sealed class ExternalQuotaSource : IQuotaSource
         }
     }
 
-    private async Task<QuotaSnapshot?> RunAsync(string scriptPath, CancellationToken ct)
+    private async Task<QuotaSnapshot?> RunAsync(string scriptPath, CancellationToken ct, bool manual)
     {
         var interpreter = ResolveInterpreter();
         if (interpreter is null)
@@ -133,6 +133,9 @@ internal sealed class ExternalQuotaSource : IQuotaSource
         psi.Environment["AGENTLIMITS_VERSION"] = "1.0.0";
         psi.Environment["AGENTLIMITS_PLUGIN_ID"] = Id;
         psi.Environment["AGENTLIMITS_INTERVAL_SEC"] = ((int)Interval.TotalSeconds).ToString();
+        // Lets a plugin tell a double-click from a scheduled poll: a manual refresh
+        // can afford a costly operation, a scheduled one cannot.
+        psi.Environment["AGENTLIMITS_MANUAL"] = manual ? "1" : "0";
 
         // Builtin source tokens
         var cfg = AppConfig.Load();

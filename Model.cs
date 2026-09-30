@@ -209,6 +209,8 @@ public sealed class LimitRow : INotifyPropertyChanged
     {
         "z.ai · GLM" => "Mon–Fri 08:00–12:00 (3×)",
         "MiniMax"    => "Mon–Fri 09:00–11:30",
+        // The discount is off only during the expensive window, so outside it the label goes away entirely.
+        AlibabaGroup => AlibabaPeakActive ? $"2× until {AlibabaCheapStartsLocal:HH:mm}" : null,
         _ => null
     };
 
@@ -216,6 +218,8 @@ public sealed class LimitRow : INotifyPropertyChanged
     {
         get
         {
+            if (Group == AlibabaGroup) return AlibabaPeakActive;
+
             var now = DateTime.Now;
             if (now.DayOfWeek is < DayOfWeek.Monday or > DayOfWeek.Friday)
                 return false;
@@ -238,8 +242,37 @@ public sealed class LimitRow : INotifyPropertyChanged
         "MiniMax" => IsPeakActive
             ? "Peak hours ACTIVE right now! Traffic control & accelerated usage (Mon–Fri 09:00–11:30 local time)"
             : "Peak hours: Mon–Fri 09:00–11:30 (traffic control / dynamic rate limiting)",
+        AlibabaGroup => AlibabaPeakActive
+            ? $"Daytime rate ACTIVE: credits burn at full price until {AlibabaCheapStartsLocal:HH:mm} local. "
+              + "Off-peak (22:00–08:00 UTC+8) costs 50% less for qwen3.8-max and the DeepSeek models."
+            : $"Off-peak right now: credits cost 50% less until {AlibabaPeakStartsLocal:HH:mm} local "
+              + "(discount window is 22:00–08:00 UTC+8).",
         _ => ""
     };
+
+    private const string AlibabaGroup = "Alibaba Subscription";
+
+    /// <summary>The discount window is defined in UTC+8, so compute from that rather than local
+    /// hours — otherwise the boundary would shift on a daylight-saving change.</summary>
+    private static bool AlibabaPeakActive
+    {
+        get
+        {
+            var cn = DateTime.UtcNow.AddHours(8).TimeOfDay;
+            return cn >= TimeSpan.FromHours(8) && cn < TimeSpan.FromHours(22);
+        }
+    }
+
+    private static DateTime AlibabaCheapStartsLocal => NextCnHourLocal(22);
+    private static DateTime AlibabaPeakStartsLocal => NextCnHourLocal(8);
+
+    private static DateTime NextCnHourLocal(int hourCn)
+    {
+        var cnNow = DateTime.UtcNow.AddHours(8);
+        var target = cnNow.Date.AddHours(hourCn);
+        if (target <= cnNow) target = target.AddDays(1);
+        return DateTime.SpecifyKind(target.AddHours(-8), DateTimeKind.Utc).ToLocalTime();
+    }
 
     /// <summary>Ticks once a minute: recompute "resets in Xh Ym" and peak-hours status without hitting the source.</summary>
     public void RefreshCountdown()
@@ -247,6 +280,7 @@ public sealed class LimitRow : INotifyPropertyChanged
         Raise(nameof(ResetText));
         Raise(nameof(RemainingText));
         Raise(nameof(IsPeakActive));
+        Raise(nameof(PeakScheduleText));
         Raise(nameof(PeakTooltip));
     }
 

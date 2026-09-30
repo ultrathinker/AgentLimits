@@ -106,24 +106,61 @@ public sealed class PluginHost
     /// instead of only reading a local cache (see IQuotaSource.RefreshAsync).</summary>
     public async Task RefreshOneAsync(IQuotaSource src, bool manual = false)
     {
+        var snap = await RefreshCoreAsync(src, manual);
+        if (manual && src is ExternalQuotaSource && HasError(snap)) _ = FollowUpAsync(src);
+    }
+
+    private static bool HasError(QuotaSnapshot? snap) =>
+        snap is not null && (snap.SourceError is not null || snap.Blocks.Any(b => b.Error is not null));
+
+    /// <summary>A plugin often answers a double-click with "opening the browser, sign in" and
+    /// gets the real figure later. To bring the row back right after sign-in rather than on the
+    /// next timer tick, keep re-polling it until the error clears.</summary>
+    private async Task FollowUpAsync(IQuotaSource src)
+    {
+        lock (_followUps) { if (!_followUps.Add(src.Id)) return; }
+        try
+        {
+            var until = DateTime.UtcNow + FollowUpWindow;
+            while (_started && DateTime.UtcNow < until)
+            {
+                await Task.Delay(FollowUpStep);
+                // null means the poll was skipped (a background tick is running) or failed: no reason to give up.
+                var snap = await RefreshCoreAsync(src, manual: false);
+                if (snap is not null && !HasError(snap)) return;
+            }
+        }
+        finally
+        {
+            lock (_followUps) _followUps.Remove(src.Id);
+        }
+    }
+
+    private readonly HashSet<string> _followUps = new();
+    private static readonly TimeSpan FollowUpStep = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan FollowUpWindow = TimeSpan.FromMinutes(5);
+
+    private async Task<QuotaSnapshot?> RefreshCoreAsync(IQuotaSource src, bool manual)
+    {
         // A background tick over a running poll is simply skipped. A manual one waits: otherwise
         // a double-click during a background poll would silently do nothing.
         if (!await src.Gate.WaitAsync(manual ? ManualGateWait : TimeSpan.Zero))
         {
             Log.Info($"{src.Id}: skipped, previous refresh still running");
-            return;
+            return null;
         }
         try
         {
             using var cts = new CancellationTokenSource();
             var snap = await src.RefreshAsync(cts.Token, manual);
-            if (snap is null) return;
+            if (snap is null) return null;
 
             // Apply on the UI thread
             await _ui.InvokeAsync(() => _registry.Apply(snap));
+            return snap;
         }
-        catch (OperationCanceledException) { /* expected on shutdown */ }
-        catch (Exception ex) { Log.Error($"{src.Id}: refresh threw", ex); }
+        catch (OperationCanceledException) { return null; /* expected on shutdown */ }
+        catch (Exception ex) { Log.Error($"{src.Id}: refresh threw", ex); return null; }
         finally
         {
             src.Gate.Release();
